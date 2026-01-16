@@ -5,8 +5,8 @@
     of the MIT license.  See the LICENSE file for details.
 */
 
-const version_string = "Y2JB 1.2.1 by Gezine";
-const auto_version_string = "autoY2JB v0.3";
+const version_string = "Y2JB 1.3 by Gezine";
+const auto_version_string = "autoY2JB v0.4";
 
 function load_localscript(src) {
     return new Promise((resolve, reject) => {
@@ -758,73 +758,132 @@ function trigger() {
         }
         
         // PSN dialog disabler
-        await log("Disabling PSN dialog and Youtube splash kill...");
-        const psn_callback = eboot_base + 0x2AEC50n;
-        const yt_callback = eboot_base + 0x10B70n;
+        await log("Disabling PSN dialog and Youtube splash...");
+
+        const window_addr = addrof(window);
+        const wrapper_private_addr = read64(window_addr + 0x20n);
+        const isolate_addr = read64(wrapper_private_addr + 0x8n);
+        const splash_screen_dom_window_addr = read64(wrapper_private_addr + 0x10n);
+        const navigator_addr = read64(splash_screen_dom_window_addr + 0xC0n);
+
+        //await log("navigator_addr: " + toHex(navigator_addr));
         
-        await log("PSN dialog callback: " + toHex(psn_callback));
-        await log("YT callback: " + toHex(yt_callback));
+        const maybe_freeze_callback_addr = read64(navigator_addr + 0xB0n);
+        //await log("maybe_freeze_callback_addr: " + toHex(maybe_freeze_callback_addr));
         
-        const sceKernelVirtualQuery = read64(eboot_base + 0x2A65C10n);
-        const info = malloc(0x60);
+        const browser_module_addr = read64(maybe_freeze_callback_addr + 0x30n);
+        //await log("browser_module_addr: " + toHex(browser_module_addr));
         
-        let current_addr = 0x200000000n;
-        let end_addr = 0x300000000n;
-        let regions_searched = 0;
-        let psn_matches = 0;
-        let yt_matches = 0;
+        const main_web_module_addr = read64(browser_module_addr + 0x678n);
+        //await log("main_web_module_addr: " + toHex(main_web_module_addr));
         
-        while (current_addr < end_addr && (psn_matches < 2 || yt_matches < 1)) {
-            const ret = call(sceKernelVirtualQuery, current_addr, 1n, info, 0x60n);
+        const main_web_module_impl_addr = read64(main_web_module_addr + 0x18n);
+        //await log("main_web_module_impl_addr: " + toHex(main_web_module_impl_addr));
+        
+        const main_dom_window_addr = read64(main_web_module_impl_addr + 0x230n);
+        //await log("main_dom_window_addr: " + toHex(main_dom_window_addr));
+        
+        const splash_screen_addr = read64(browser_module_addr + 0x898n);
+        //await log("splash_screen_addr: " + toHex(splash_screen_addr));
+        
+        const splash_screen_web_module_addr = read64(splash_screen_addr + 0x20n);
+        //await log("splash_screen_web_module_addr: " + toHex(splash_screen_web_module_addr));
+        
+        const splash_screen_web_module_impl_addr = read64(splash_screen_web_module_addr + 0x18n);
+        //await log("splash_screen_web_module_impl_addr: " + toHex(splash_screen_web_module_impl_addr));
+
+        //await log("Disabling YouTube splash screen...");
+        const main_web_module_generation_addr = browser_module_addr + 0xB08n;
+        write32(main_web_module_generation_addr, 0xFFFFFFFFn); // Set to -1 (64-bit)
+        await log("YT splash disabled!");
+
+        await log("Disabling PSN popup...");
+        // Get sceCommonDialogInitialize address and find libSceCommonDialog base
+        const sceCommonDialogInitialize_addr = read64(eboot_base + 0x2A65F98n);
+        //await log("sceCommonDialogInitialize_addr: " + toHex(sceCommonDialogInitialize_addr));
+        
+        const sceCommonDialogTerminate_addr = sceCommonDialogInitialize_addr + 0x70n;
+        call(sceCommonDialogTerminate_addr);
+        
+        // Disable "no internet connection" retry timer
+        const on_error_retry_timer_addr = browser_module_addr + 0x960n;
+        //await log("on_error_retry_timer_addr: " + toHex(on_error_retry_timer_addr));
+        
+        const is_running_addr = on_error_retry_timer_addr + 0x60n;
+        //await log("is_running_addr: " + toHex(is_running_addr));
+        
+        // Set is_running to 1 (true)
+        write8(is_running_addr, 0x1n);
+        
+        await log("PSN popup disabled!");
+
+        // const psn_callback = eboot_base + 0x2AEC50n;
+        // const yt_callback = eboot_base + 0x10B70n;
+        
+        // await log("PSN dialog callback: " + toHex(psn_callback));
+        // await log("YT callback: " + toHex(yt_callback));
+        
+        // const sceKernelVirtualQuery = read64(eboot_base + 0x2A65C10n);
+        // const info = malloc(0x60);
+        
+        // let current_addr = 0x200000000n;
+        // let end_addr = 0x300000000n;
+        // let regions_searched = 0;
+        // let psn_matches = 0;
+        // let yt_matches = 0;
+        
+        // while (current_addr < end_addr && (psn_matches < 2 || yt_matches < 1)) {
+        //     const ret = call(sceKernelVirtualQuery, current_addr, 1n, info, 0x60n);
             
-            const start = read64(info);
-            if (start >= end_addr) break;
+        //     const start = read64(info);
+        //     if (start >= end_addr) break;
             
-            const end = read64(info + 8n);
-            const size = end - start;
-            const protection = read32(info + 0x18n);
+        //     const end = read64(info + 8n);
+        //     const size = end - start;
+        //     const protection = read32(info + 0x18n);
             
-            regions_searched++;
+        //     regions_searched++;
             
-            if (size <= 0x40000n && protection === 3n) {
+        //     if (size <= 0x40000n && protection === 3n) {
                 
-                for (let addr = start; addr < end; addr += 8n) {
+        //         for (let addr = start; addr < end; addr += 8n) {
                     
-                    let value = read64(addr);
+        //             let value = read64(addr);
                     
-                    if (value === psn_callback && psn_matches < 2) {
-                        psn_matches++;
-                        await log("PSN Callback address @ " + toHex(addr));
-                        write64(addr, ROP.ret);
-                    } else if (value === yt_callback && yt_matches < 1) {
-                        yt_matches++;
-                        await log("YT Callback address @ " + toHex(addr));
-                        write64(addr, ROP.ret);
-                    }
+        //             if (value === psn_callback && psn_matches < 2) {
+        //                 psn_matches++;
+        //                 await log("PSN Callback address @ " + toHex(addr));
+        //                 write64(addr, ROP.ret);
+        //             } else if (value === yt_callback && yt_matches < 1) {
+        //                 yt_matches++;
+        //                 await log("YT Callback address @ " + toHex(addr));
+        //                 write64(addr, ROP.ret);
+        //             }
                     
-                    // Break inner loop if we found everything we need
-                    if (psn_matches >= 2 && yt_matches >= 1) {
-                        break;
-                    }
-                }
-            }
+        //             // Break inner loop if we found everything we need
+        //             if (psn_matches >= 2 && yt_matches >= 1) {
+        //                 break;
+        //             }
+        //         }
+        //     }
             
-            // Break outer loop if we found everything
-            if (psn_matches >= 2 && yt_matches >= 1) {
-                break;
-            }
+        //     // Break outer loop if we found everything
+        //     if (psn_matches >= 2 && yt_matches >= 1) {
+        //         break;
+        //     }
             
-            current_addr = end;
-        }
+        //     current_addr = end;
+        // }
 
         // https://github.com/shahrilnet/remote_lua_loader/blob/22a03e38b6e8f13e2e379f7c5036767c14162ff3/savedata/syscall.lua#L42
-        const sceKernelGetModuleInfoFromAddr = read64(libc_base + 0x113C08n);
-        await log("sceKernelGetModuleInfoFromAddr @ " + toHex(sceKernelGetModuleInfoFromAddr));
+        sceKernelGetModuleInfoFromAddr = read64(libc_base + 0x113C08n);
+        // const sceKernelGetModuleInfoFromAddr = read64(libc_base + 0x113C08n);
+        // await log("sceKernelGetModuleInfoFromAddr @ " + toHex(sceKernelGetModuleInfoFromAddr));
         
         //gettimeofday plt
         //0x113B18
         const gettimeofdayAddr = read64(libc_base + 0x113B18n);
-        await log("gettimeofdayAddr @: " + toHex(gettimeofdayAddr));
+        // await log("gettimeofdayAddr @: " + toHex(gettimeofdayAddr));
         
         const mod_info = malloc(0x300);
         //await log("mod_info buffer @ " + toHex(mod_info));
@@ -840,10 +899,10 @@ function trigger() {
         }
         
         libkernel_base = read64(mod_info + SEGMENTS_OFFSET);
-        await log("libkernel_base @ " + toHex(libkernel_base));
+        // await log("libkernel_base @ " + toHex(libkernel_base));
 
         syscall_wrapper = gettimeofdayAddr + 0x7n;
-        await log("syscall_wrapper @ " + toHex(syscall_wrapper));
+        // await log("syscall_wrapper @ " + toHex(syscall_wrapper));
         
         syscall = function(syscall_num, arg1 = 0x0n, arg2 = 0x0n, arg3 = 0x0n, arg4 = 0x0n, arg5 = 0x0n, arg6 = 0x0n) {
             if(syscall_num === undefined) {
@@ -867,13 +926,13 @@ function trigger() {
         
         await load_localscript('misc.js');
         
-        if (psn_matches >= 1 && yt_matches >= 1) {
-            send_notification("PSN dialog disabled\nSafe to close PSN sign out dialog now");
-            await log("PSN dialog disabled\nSafe to close PSN sign out dialog now");
-        } else {
-            send_notification("Failed to disable PSN dialog\nDo not close PSN sign out dialog early\nClose and restart Y2JB");
-            throw new Error("Failed to disable PSN dialog\nDo not close PSN sign out dialog early\nClose and restart Y2JB");
-        }
+        // if (psn_matches >= 1 && yt_matches >= 1) {
+        //     send_notification("PSN dialog disabled\nSafe to close PSN sign out dialog now");
+        //     await log("PSN dialog disabled\nSafe to close PSN sign out dialog now");
+        // } else {
+        //     send_notification("Failed to disable PSN dialog\nDo not close PSN sign out dialog early\nClose and restart Y2JB");
+        //     throw new Error("Failed to disable PSN dialog\nDo not close PSN sign out dialog early\nClose and restart Y2JB");
+        // }
         
         await checkLogServer();
         
@@ -887,7 +946,9 @@ function trigger() {
             SCE_KERNEL_DLSYM = libkernel_base + get_dlsym_offset(FW_VERSION);
             await log("SCE_KERNEL_DLSYM @ " + toHex(SCE_KERNEL_DLSYM));
         } catch (e) {
-            await log("WARNING : No dlsym offset was found for firmware " + FW_VERSION);
+            // await log("WARNING : No dlsym offset was found for firmware " + FW_VERSION);
+            SCE_KERNEL_DLSYM = sceKernelGetModuleInfoFromAddr - 0x450n;
+            await log("WARNING : sceKernelDlsym offset not found\nUsing predicted value " + toHex(SCE_KERNEL_DLSYM));
         }
         
         // Used for gpu rw
@@ -907,7 +968,7 @@ function trigger() {
         ////////////////////
         // MAIN EXECUTION //
         ////////////////////
-        
+        send_notification("Close two PSN dialogs manually");
         send_notification(auto_version_string);
         await sleep(2000);
 

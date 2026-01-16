@@ -78,8 +78,10 @@ function sysctlbyname(name, oldp, oldp_len, newp, newp_len) {
     if (syscall(SYSCALL.sysctl, translate_name_mib, 2n, mib, size, name_addr, name_len) === 0xffffffffffffffffn) {
         throw new Error("failed to translate sysctl name to mib (" + name + ")");
     }
+
+    let mib_len = read64(size) / 4n
     
-    if (syscall(SYSCALL.sysctl, mib, 2n, oldp, oldp_len, newp, newp_len) === 0xffffffffffffffffn) {
+    if (syscall(SYSCALL.sysctl, mib, mib_len, oldp, oldp_len, newp, newp_len) === 0xffffffffffffffffn) {
         return false;
     }
     
